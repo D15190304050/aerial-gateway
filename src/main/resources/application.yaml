@@ -22,13 +22,13 @@ spring:
 jwt:
     # 不需要认证的路径白名单
     ignore-urls:
-        - /login
-        - /register
-        - /health
-        - /favicon.ico
-        - /error
-        - /api/public/**
-        - /actuator/**
+        - /api/profile/**
+        - /api/iam/login
+#        - /health
+#        - /favicon.ico
+#        - /error
+#        - /api/public/**
+#        - /actuator/**
 
 logging:
     pattern:
