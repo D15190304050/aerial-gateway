@@ -1,0 +1,37 @@
+server:
+    port: 9525
+
+spring:
+    application:
+        name: aerial-gateway
+    profiles:
+        active: local
+    cloud:
+        kubernetes:
+#            enabled: true
+            discovery:
+                enabled: true
+        gateway:
+            metrics:
+                enabled: true
+            discovery:
+                locator:
+                    enabled: true
+
+# JWT认证配置
+jwt:
+    # 不需要认证的路径白名单
+    ignore-urls:
+        - /login
+        - /register
+        - /health
+        - /favicon.ico
+        - /error
+        - /api/public/**
+        - /actuator/**
+
+logging:
+    pattern:
+        console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%thread]){faint} %clr(%-40.40logger{39}){cyan} %L %clr(:){faint} %m%n"
+    level:
+        root: INFO

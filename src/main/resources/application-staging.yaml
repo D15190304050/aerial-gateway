@@ -1,0 +1,28 @@
+spring:
+    cloud:
+        kubernetes:
+            discovery:
+                enabled: false
+        gateway:
+            routes:
+                # 这些路由将使用服务发现机制
+                # 在K8S环境中，将使用K8S服务发现
+                # 在本地环境中，需要确保服务可访问或使用application-local.yaml覆盖配置
+                -   id: spike_route
+                    uri: lb://spike
+                    predicates:
+                        - Path=/api/spike/**
+                    filters:
+                        - StripPrefix=2
+                -   id: image_route
+                    uri: lb://image-server
+                    predicates:
+                        - Path=/api/image/**
+                    filters:
+                        - StripPrefix=2
+                -   id: mocha_bean_route
+                    uri: lb://mocha-bean
+                    predicates:
+                        - Path=/api/mocha-bean/**
+                    filters:
+                        - StripPrefix=2

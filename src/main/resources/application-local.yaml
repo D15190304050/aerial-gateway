@@ -1,0 +1,28 @@
+spring:
+    data:
+        redis:
+            host: localhost
+            port: 10079
+            timeout: 2000ms
+            jedis:
+                pool:
+                    max-active: 8
+                    max-wait: 3000ms
+                    max-idle: 8
+                    min-idle: 0
+    cloud:
+        kubernetes:
+            discovery:
+                enabled: false
+        gateway:
+            routes:
+                -   id: titan_treasure_route
+                    uri: http://localhost:46258
+                    predicates:
+                        - Path=/api/profile/**
+                    filters:
+                        - StripPrefix=2
+
+titan:
+    gate:
+        jwt-secret: q4~@x2uC$f@M2x*^e5&DB^L!3~)6@+

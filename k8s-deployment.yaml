@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aerial-gateway
+  labels:
+    app: aerial-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aerial-gateway
+  template:
+    metadata:
+      labels:
+        app: aerial-gateway
+    spec:
+      containers:
+      - name: aerial-gateway
+        image: aerial-gateway:latest
+        ports:
+        - containerPort: 9525
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: k8s
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aerial-gateway
+spec:
+  selector:
+    app: aerial-gateway
+  ports:
+    - protocol: TCP
+      port: 9525
+      targetPort: 9525
+  type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aerial-gateway-role
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aerial-gateway-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aerial-gateway-role
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
