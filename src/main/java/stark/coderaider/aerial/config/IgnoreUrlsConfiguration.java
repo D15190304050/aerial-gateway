@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 @ConfigurationProperties(prefix = "jwt")
 @Component
 @Slf4j
-public class IgnoreUrlsConfig
+public class IgnoreUrlsConfiguration
 {
     /**
      * 不需要认证的URL路径列表（静态配置）
@@ -252,14 +252,6 @@ public class IgnoreUrlsConfig
             // 如果Redis不可用，只从内存中移除
             dynamicIgnoreUrls.remove(url);
         }
-    }
-
-    /**
-     * 获取所有忽略的URL（新的服务级动态配置）
-     */
-    public CopyOnWriteArrayList<String> getAllIgnoreUrlsCache()
-    {
-        return allIgnoreUrlsCache;
     }
 
     /**

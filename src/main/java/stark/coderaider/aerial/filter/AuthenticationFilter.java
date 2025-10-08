@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import stark.coderaider.aerial.config.IgnoreUrlsConfig;
+import stark.coderaider.aerial.config.IgnoreUrlsConfiguration;
 import stark.coderaider.aerial.services.JwtService;
 
 import java.util.List;
@@ -28,7 +28,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
     private JwtService jwtService;
 
     @Autowired
-    private IgnoreUrlsConfig ignoreUrlsConfig;
+    private IgnoreUrlsConfiguration ignoreUrlsConfiguration;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain)
@@ -47,18 +47,15 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         }
 
         // 从Header中获取Authorization
-        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        String token = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
         // 如果没有Authorization header，拒绝访问
-        if (authHeader == null || !authHeader.startsWith("Bearer "))
+        if (token == null)
         {
             log.warn("Missing or invalid Authorization header for path: {}", path);
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return response.setComplete();
         }
-
-        // 提取JWT令牌
-        String token = authHeader.substring(7); // 移除 "Bearer " 前缀
 
         // 验证JWT令牌
         if (!jwtService.verify(token))
@@ -81,7 +78,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
      */
     private boolean isWhitelisted(String path)
     {
-        List<String> ignoreUrls = ignoreUrlsConfig.getAllIgnoreUrls();
+        List<String> ignoreUrls = ignoreUrlsConfiguration.getAllIgnoreUrls();
         if (ignoreUrls == null || ignoreUrls.isEmpty())
             return false;
 
