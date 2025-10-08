@@ -32,3 +32,6 @@ spring:
 titan:
     gate:
         jwt-secret: q4~@x2uC$f@M2x*^e5&DB^L!3~)6@+
+    treasure:
+        login-url: http://127.0.0.1:3710/login
+        default-home-url: http://127.0.0.1:3710/profile
