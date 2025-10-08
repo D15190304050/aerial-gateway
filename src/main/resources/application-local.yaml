@@ -22,6 +22,12 @@ spring:
                         - Path=/api/profile/**
                     filters:
                         - StripPrefix=2
+                -   id: titan_gate_route
+                    uri: http://localhost:32764
+                    predicates:
+                        - Path=/api/iam/**
+                    filters:
+                        - StripPrefix=2
 
 titan:
     gate:
