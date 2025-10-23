@@ -16,7 +16,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
-import stark.coderaider.aerial.config.IgnoreUrlsConfiguration;
+import stark.coderaider.aerial.config.IgnorableUrlsConfiguration;
 import stark.coderaider.aerial.services.JwtService;
 
 import java.net.URI;
@@ -34,8 +34,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
     private JwtService jwtService;
 
     @Autowired
-    private IgnoreUrlsConfiguration ignoreUrlsConfiguration;
-    
+    private IgnorableUrlsConfiguration ignorableUrlsConfiguration;
+
     @Value("${titan.treasure.login-url}")
     private String loginPageUrl;
 
@@ -49,14 +49,11 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
 //        ServerHttpResponse response = exchange.getResponse();
 
         String path = request.getURI().getPath();
-        log.debug("Processing request: {}", path);
+        // TODO: Delete this log statement once debugging is done.
+        log.info("Request path: {}", path);
 
-        // 检查是否在白名单中（包括静态配置和动态配置）
         if (isWhitelisted(path))
-        {
-            log.debug("Path {} is whitelisted, allowing access", path);
             return chain.filter(exchange);
-        }
 
         // 从Header中获取Authorization
         String token = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
@@ -65,18 +62,17 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         if (token == null)
         {
             log.warn("Missing or invalid Authorization header for path: {}", path);
-            return redirectToLoginPage(exchange, path);
+            return redirectToLoginPage(exchange);
         }
 
         // 验证JWT令牌
-        if (!jwtService.verify(token))
+        if (!jwtService.tryParseUserInfo(token, request))
         {
             log.warn("Invalid JWT token for path: {}", path);
-            return redirectToLoginPage(exchange, path);
+            return redirectToLoginPage(exchange);
         }
 
         // 令牌有效，继续处理请求
-        log.debug("JWT token validated successfully for path: {}", path);
         return chain.filter(exchange);
     }
 
@@ -84,27 +80,27 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
      * 重定向到登录页面
      *
      * @param exchange 当前请求交换机
-     * @param path 原始请求路径
      * @return Mono&lt;Void>
      */
-    private Mono<Void> redirectToLoginPage(ServerWebExchange exchange, String path)
+    private Mono<Void> redirectToLoginPage(ServerWebExchange exchange)
     {
         ServerHttpResponse response = exchange.getResponse();
-        
+
         // 尝试从Referer头获取前端页面URL
         String referer = exchange.getRequest().getHeaders().getFirst("Referer");
         String redirectUrl = defaultHomeUrl; // 默认使用默认首页地址
-        
-        if (StringUtils.hasText(referer)) {
+
+        if (StringUtils.hasText(referer))
+        {
             // 如果Referer存在且非空，则使用它作为redirectUrl
             redirectUrl = referer;
         }
-        
+
         // 构造最终的重定向URL，将redirectUrl作为参数传递给登录页面
         String finalRedirectUrl = UriComponentsBuilder.fromUriString(loginPageUrl)
-                .queryParam(REDIRECT_URL, redirectUrl)
-                .toUriString();
-        
+            .queryParam(REDIRECT_URL, redirectUrl)
+            .toUriString();
+
         response.setStatusCode(HttpStatus.FOUND);
         response.getHeaders().setLocation(URI.create(finalRedirectUrl));
         return response.setComplete();
@@ -118,11 +114,11 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
      */
     private boolean isWhitelisted(String path)
     {
-        List<String> ignoreUrls = ignoreUrlsConfiguration.getAllIgnoreUrls();
-        if (ignoreUrls == null || ignoreUrls.isEmpty())
+        List<String> ignorableUrls = ignorableUrlsConfiguration.getAllIgnorableUrls();
+        if (ignorableUrls == null || ignorableUrls.isEmpty())
             return false;
 
-        return ignoreUrls.stream().anyMatch(pattern ->
+        return ignorableUrls.stream().anyMatch(pattern ->
             antPathMatcher.match(pattern, path));
     }
 

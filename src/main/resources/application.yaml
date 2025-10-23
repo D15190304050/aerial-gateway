@@ -18,10 +18,10 @@ spring:
                 locator:
                     enabled: true
 
-# JWT认证配置
-jwt:
+# 认证配置
+authentication:
     # 不需要认证的路径白名单
-    ignore-urls:
+    ignorable-urls:
         - /api/profile/**
         - /api/iam/login
 #        - /health
