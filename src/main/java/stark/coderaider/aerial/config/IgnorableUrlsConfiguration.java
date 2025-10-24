@@ -4,89 +4,96 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.environment.EnvironmentChangeEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-
-import jakarta.annotation.PostConstruct;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
+
+import jakarta.annotation.PostConstruct;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 统一维护“无需认证即可访问”的 URL 列表。
+ * 支持：
+ * 1. 静态配置（application.yml）
+ * 2. 运行时通过 Redis 动态下发（按服务维度）
+ * 3. 配置热修改监听
+ * 4. 定时兜底刷新
+ */
 @Data
 @ConfigurationProperties(prefix = "authentication")
 @Component
 @Slf4j
 public class IgnorableUrlsConfiguration
 {
-    /**
-     * ignorable-urls-keys的key.
-     */
-    private static final String IGNORABLE_URLS_KEYS = "ignorable_urls:keys";
 
-    /**
-     * 服务级别缓存的key的匹配模式
-     */
+    /* ---------- 常量 ---------- */
+    public static final String IGNORABLE_URLS_KEYS = "ignorable_urls:keys";
     public static final String SERVICE_KEY_PATTERN = "ignorable_urls:service:*";
 
-    /**
-     * 不需要认证的URL路径列表（静态配置）
-     */
-    private List<String> ignorableUrls;
+    /* ---------- 配置 ---------- */
+    private final List<String> ignorableUrls;          // 静态名单（启动后只读）
 
+    /* ---------- 依赖 ---------- */
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
     private RedisMessageListenerContainer redisMessageListenerContainer;
 
-    // 服务级别缓存
-    private final Map<String, Set<String>> serviceIgnorableUrlsCache;
+    /* ---------- 缓存 ---------- */
+    // 服务维度原始字符串
+    private final Map<String, Set<String>> serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
 
+    // 编译后的 PathPattern（读写分离，并发安全）
     private volatile List<PathPattern> ignorablePathPatterns;
+    private volatile Map<String, PathPattern> pathPatternCache;
 
-    private final HashMap<String, PathPattern> pathPatternCache;
-
-    public IgnorableUrlsConfiguration()
+    /* ---------- 构造 ---------- */
+    public IgnorableUrlsConfiguration(List<String> ignorableUrls)
     {
-        serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
-        ignorablePathPatterns = new ArrayList<>();
-        pathPatternCache = new HashMap<>();
+        ignorablePathPatterns = List.of();
+        pathPatternCache = new ConcurrentHashMap<>();
+        this.ignorableUrls = Objects.requireNonNullElse(ignorableUrls, List.of());
     }
 
-    /**
-     * 初始化订阅
-     */
+    /* =======================================
+     *  生命周期：订阅 + 初始加载
+     * ======================================= */
     @PostConstruct
     public void initSubscriptions()
     {
         try
         {
-            // 订阅ignorable-urls-keys的变更
-            redisMessageListenerContainer.addMessageListener((message, pattern) ->
-            {
-                log.info("Received message for ignorable-urls-keys update.");
-                refreshAllConfig();
-            }, new PatternTopic(IGNORABLE_URLS_KEYS));
+            // 1. 监听“总 KEY 集合”变更
+            redisMessageListenerContainer.addMessageListener(
+                (m, p) ->
+                {
+                    log.info("Received message for ignorable-urls-keys update.");
+                    refreshAllConfig();
+                },
+                new PatternTopic(IGNORABLE_URLS_KEYS));
 
-            // 订阅所有服务的ignorable_urls:service:*变更
-            redisMessageListenerContainer.addMessageListener((message, pattern) ->
-            {
-                String channel = new String(message.getChannel());
-                log.info("Received message for service update: {}.", channel);
+            // 2. 监听单个服务变更
+            redisMessageListenerContainer.addMessageListener(
+                (m, p) ->
+                {
+                    String channel = new String(m.getChannel());
+                    log.info("Received message for service update: {}.", channel);
+                    refreshServiceConfig(channel);
+                    mergeAllIgnorableUrls();
+                },
+                new PatternTopic(SERVICE_KEY_PATTERN));
 
-                // We can merge all ignorable URLs here because normally we won't update ignorable URLs of multiple
-                // services at the same time.
-                refreshServiceConfig(channel);
-                mergeAllIgnorableUrls();
-            }, new PatternTopic(SERVICE_KEY_PATTERN));
-
-            // 初始化加载所有配置
+            // 3. 首次全量加载
             refreshAllConfig();
         }
         catch (Exception e)
@@ -95,26 +102,24 @@ public class IgnorableUrlsConfiguration
         }
     }
 
-    /**
-     * 刷新所有配置
-     */
+    /* =======================================
+     *  外部触发接口
+     * ======================================= */
     public void refreshAllConfig()
     {
         try
         {
             log.info("Refreshing all authentication ignorable URL configurations.");
-            // 获取所有服务的key
             Set<String> serviceKeys = stringRedisTemplate.opsForSet().members(IGNORABLE_URLS_KEYS);
             if (serviceKeys != null)
             {
                 log.info("Found {} service keys.", serviceKeys.size());
-                for (String serviceKey : serviceKeys)
-                    refreshServiceConfig(serviceKey);
+                serviceKeys.forEach(this::refreshServiceConfig);
             }
             else
-                log.info("No service keys found");
-
-            // 合并所有服务的白名单
+            {
+                log.info("No service keys found.");
+            }
             mergeAllIgnorableUrls();
         }
         catch (Exception e)
@@ -123,9 +128,9 @@ public class IgnorableUrlsConfiguration
         }
     }
 
-    /**
-     * 刷新单个服务的配置
-     */
+    /* =======================================
+     *  内部：单服务刷新 + 合并
+     * ======================================= */
     private void refreshServiceConfig(String serviceKey)
     {
         try
@@ -139,8 +144,8 @@ public class IgnorableUrlsConfiguration
             }
             else
             {
-                log.info("No URLs found for service key: {}.", serviceKey);
-                serviceIgnorableUrlsCache.put(serviceKey, Set.of());
+                log.info("Key {} no longer exists, remove local cache.", serviceKey);
+                serviceIgnorableUrlsCache.remove(serviceKey);
             }
         }
         catch (Exception e)
@@ -150,22 +155,19 @@ public class IgnorableUrlsConfiguration
     }
 
     /**
-     * 合并所有服务的白名单，并原子地更新到内存缓存
+     * 合并静态 + 动态名单，原子更新 PathPattern 缓存
      */
     private void mergeAllIgnorableUrls()
     {
         try
         {
-            // 1. 收集：静态配置 + 所有服务动态下发的 URL
-            List<String> allIgnorableUrls = new ArrayList<>(ignorableUrls); // 静态
-            serviceIgnorableUrlsCache.values().forEach(allIgnorableUrls::addAll); // 动态
+            // 1. 收集
+            List<String> allIgnorableUrls = new ArrayList<>(ignorableUrls);
+            serviceIgnorableUrlsCache.values().forEach(allIgnorableUrls::addAll);
 
-            // 2. 重建：只保留仍有效的 Pattern，新增未缓存的 Pattern
+            // 2. 重建（异常隔离）
             Map<String, PathPattern> newCache = new HashMap<>(pathPatternCache);
-            // 2.1 删除已失效的 Pattern
-            newCache.keySet().retainAll(allIgnorableUrls);
-
-            // 2.2 新增或补全 Pattern（异常隔离，单条失败不影响整体）
+            newCache.keySet().retainAll(allIgnorableUrls);          // 删掉失效
             for (String url : allIgnorableUrls)
             {
                 if (!newCache.containsKey(url))
@@ -182,10 +184,11 @@ public class IgnorableUrlsConfiguration
                 }
             }
 
-            // 3. 原子发布：一次性替换缓存和只读列表
-            pathPatternCache.clear();
-            pathPatternCache.putAll(newCache);
-            ignorablePathPatterns = List.copyOf(newCache.values()); // 不可变，安全并发
+            // 3. 原子发布
+            Map<String, PathPattern> oldCache = pathPatternCache;
+            pathPatternCache = new ConcurrentHashMap<>(newCache);
+            ignorablePathPatterns = List.copyOf(newCache.values());
+            oldCache.clear();   // 延迟清理，无并发风险
 
             log.info("Merged {} valid url patterns into global ignorable list.", newCache.size());
         }
@@ -195,10 +198,24 @@ public class IgnorableUrlsConfiguration
         }
     }
 
-    /**
-     * 定期刷新机制作为备份（每1分钟）
-     */
-    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.MINUTES)
+    /* =======================================
+     *  热修改监听（静态配置变动）
+     * ======================================= */
+    @EventListener
+    public void onEnvChange(EnvironmentChangeEvent event)
+    {
+        boolean hit = event.getKeys().stream().anyMatch(k -> k.startsWith("authentication.ignorable-urls"));
+        if (hit)
+        {
+            log.info("Static ignorable-urls changed, reload all.");
+            refreshAllConfig();
+        }
+    }
+
+    /* =======================================
+     *  兜底定时刷新
+     * ======================================= */
+    @Scheduled(fixedDelay = 1, timeUnit = TimeUnit.MINUTES, initialDelay = 1)
     public void scheduledRefresh()
     {
         log.info("Scheduled refresh of authentication configurations.");
