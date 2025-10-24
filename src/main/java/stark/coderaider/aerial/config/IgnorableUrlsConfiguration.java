@@ -1,7 +1,6 @@
 package stark.coderaider.aerial.config;
 
 import lombok.Data;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -12,12 +11,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 @Data
@@ -48,17 +46,18 @@ public class IgnorableUrlsConfiguration
     private RedisMessageListenerContainer redisMessageListenerContainer;
 
     // 服务级别缓存
-    private final Map<String, Set<String>> serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> serviceIgnorableUrlsCache;
 
-    // 合并后的完整白名单缓存
-    @Getter
-    private final CopyOnWriteArrayList<String> allIgnorableUrls = new CopyOnWriteArrayList<>();
+    private volatile List<PathPattern> ignorablePathPatterns;
 
-    /**
-     * Patterns of URLs that do not require authentication.
-     */
-    @Getter
-    private final CopyOnWriteArrayList<String> allIgnorableUrlPatterns = new CopyOnWriteArrayList<>();
+    private final HashMap<String, PathPattern> pathPatternCache;
+
+    public IgnorableUrlsConfiguration()
+    {
+        serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
+        ignorablePathPatterns = new ArrayList<>();
+        pathPatternCache = new HashMap<>();
+    }
 
     /**
      * 初始化订阅
@@ -151,19 +150,44 @@ public class IgnorableUrlsConfiguration
     }
 
     /**
-     * 合并所有服务的白名单
+     * 合并所有服务的白名单，并原子地更新到内存缓存
      */
     private void mergeAllIgnorableUrls()
     {
         try
         {
-            CopyOnWriteArrayList<String> allUrls = new CopyOnWriteArrayList<>(ignorableUrls);
-            for (Set<String> urls : serviceIgnorableUrlsCache.values())
-                allUrls.addAll(urls);
+            // 1. 收集：静态配置 + 所有服务动态下发的 URL
+            List<String> allIgnorableUrls = new ArrayList<>(ignorableUrls); // 静态
+            serviceIgnorableUrlsCache.values().forEach(allIgnorableUrls::addAll); // 动态
 
-            allIgnorableUrls.clear();
-            allIgnorableUrls.addAll(allUrls);
-            log.info("Merged {} URLs into global ignorable list.", allUrls.size());
+            // 2. 重建：只保留仍有效的 Pattern，新增未缓存的 Pattern
+            Map<String, PathPattern> newCache = new HashMap<>(pathPatternCache);
+            // 2.1 删除已失效的 Pattern
+            newCache.keySet().retainAll(allIgnorableUrls);
+
+            // 2.2 新增或补全 Pattern（异常隔离，单条失败不影响整体）
+            for (String url : allIgnorableUrls)
+            {
+                if (!newCache.containsKey(url))
+                {
+                    try
+                    {
+                        PathPattern pattern = PathPatternParser.defaultInstance.parse(url);
+                        newCache.put(url, pattern);
+                    }
+                    catch (Exception e)
+                    {
+                        log.warn("Invalid url pattern skipped: {}", url, e);
+                    }
+                }
+            }
+
+            // 3. 原子发布：一次性替换缓存和只读列表
+            pathPatternCache.clear();
+            pathPatternCache.putAll(newCache);
+            ignorablePathPatterns = List.copyOf(newCache.values()); // 不可变，安全并发
+
+            log.info("Merged {} valid url patterns into global ignorable list.", newCache.size());
         }
         catch (Exception e)
         {

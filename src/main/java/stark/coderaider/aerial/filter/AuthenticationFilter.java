@@ -8,13 +8,14 @@ import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
-import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.pattern.PathPattern;
 import reactor.core.publisher.Mono;
 import stark.coderaider.aerial.config.IgnorableUrlsConfiguration;
 import stark.coderaider.aerial.services.JwtService;
@@ -27,8 +28,6 @@ import java.util.List;
 public class AuthenticationFilter implements GlobalFilter, Ordered
 {
     public static final String REDIRECT_URL = "redirectUrl";
-
-    private final AntPathMatcher antPathMatcher = new AntPathMatcher();
 
     @Autowired
     private JwtService jwtService;
@@ -114,12 +113,22 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
      */
     private boolean isWhitelisted(String path)
     {
-        List<String> ignorableUrls = ignorableUrlsConfiguration.getAllIgnorableUrls();
-        if (ignorableUrls == null || ignorableUrls.isEmpty())
+        List<PathPattern> ignorablePathPatterns = ignorableUrlsConfiguration.getIgnorablePathPatterns();
+        if (ignorablePathPatterns == null || ignorablePathPatterns.isEmpty())
             return false;
 
-        return ignorableUrls.stream().anyMatch(pattern ->
-            antPathMatcher.match(pattern, path));
+        return ignorablePathPatterns.stream().anyMatch(pattern -> pattern.matches(requestPathToPathContainer(path)));
+    }
+
+    /**
+     * 将请求路径转换为PathContainer
+     *
+     * @param path 请求路径
+     * @return PathContainer对象
+     */
+    private PathContainer requestPathToPathContainer(String path)
+    {
+        return PathContainer.parsePath(path);
     }
 
     @Override
