@@ -1,4 +1,4 @@
-package stark.coderaider.aerial.filter;
+package stark.coderaider.aerial.filters;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
-import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -28,6 +28,7 @@ import java.util.List;
 public class AuthenticationFilter implements GlobalFilter, Ordered
 {
     public static final String REDIRECT_URL = "redirectUrl";
+    public static final String SSO_COOKIE_NAME = "titan_gate_login";
 
     @Autowired
     private JwtService jwtService;
@@ -51,11 +52,12 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         // TODO: Delete this log statement once debugging is done.
         log.info("Request path: {}", path);
 
+        // If it's a whitelisted path, allow it.
         if (isWhitelisted(path))
             return chain.filter(exchange);
 
-        // 从Header中获取Authorization
-        String token = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        // Get the JWT token from the request cookies.
+        String token = getTokenFromRequest(request);
 
         // 如果没有Authorization header，拒绝访问
         if (token == null)
@@ -73,6 +75,35 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
 
         // 令牌有效，继续处理请求
         return chain.filter(exchange);
+    }
+
+    private static String getTokenFromCookies(ServerHttpRequest request)
+    {
+        String token = null;
+        HttpCookie cookie = request.getCookies().getFirst(SSO_COOKIE_NAME);
+        if (cookie != null)
+            token = cookie.getValue();
+        return token;
+    }
+
+    private static String getTokenFromHeaders(ServerHttpRequest request)
+    {
+        String token = null;
+        String authorizationHeader = request.getHeaders().getFirst("Authorization");
+        if (authorizationHeader != null)
+            token = authorizationHeader;
+        return token;
+    }
+
+    /**
+     * Get token from request. Here the token in the header is preferred over that in the cookie.
+     * @param request
+     * @return
+     */
+    private static String getTokenFromRequest(ServerHttpRequest request)
+    {
+        String tokenFromHeaders = getTokenFromHeaders(request);
+        return tokenFromHeaders != null ? tokenFromHeaders : getTokenFromCookies(request);
     }
 
     /**
