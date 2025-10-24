@@ -40,7 +40,7 @@ public class IgnorableUrlsConfiguration
     public static final String SERVICE_KEY_PATTERN = "ignorable_urls:service:*";
 
     /* ---------- 配置 ---------- */
-    private final List<String> ignorableUrls;          // 静态名单（启动后只读）
+    private List<String> ignorableUrls;          // 静态名单（启动后只读）
 
     /* ---------- 依赖 ---------- */
     @Autowired
@@ -51,18 +51,18 @@ public class IgnorableUrlsConfiguration
 
     /* ---------- 缓存 ---------- */
     // 服务维度原始字符串
-    private final Map<String, Set<String>> serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> serviceIgnorableUrlsCache;
 
     // 编译后的 PathPattern（读写分离，并发安全）
     private volatile List<PathPattern> ignorablePathPatterns;
     private volatile Map<String, PathPattern> pathPatternCache;
 
     /* ---------- 构造 ---------- */
-    public IgnorableUrlsConfiguration(List<String> ignorableUrls)
+    public IgnorableUrlsConfiguration()
     {
+        serviceIgnorableUrlsCache = new ConcurrentHashMap<>();
         ignorablePathPatterns = List.of();
         pathPatternCache = new ConcurrentHashMap<>();
-        this.ignorableUrls = Objects.requireNonNullElse(ignorableUrls, List.of());
     }
 
     /* =======================================
