@@ -24,6 +24,7 @@ authentication:
     ignorable-urls:
         - /api/profile/**
         - /api/iam/login
+        - /api/iam/sso/verify-token
 #        - /health
 #        - /favicon.ico
 #        - /error

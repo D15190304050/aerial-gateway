@@ -7,6 +7,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpCookie;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -57,7 +58,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
             return chain.filter(exchange);
 
         // Get the JWT token from the request cookies.
-        String token = getTokenFromRequest(request);
+        String token = getTokenFromRequest(request, SSO_COOKIE_NAME);
 
         // 如果没有Authorization header，拒绝访问
         if (token == null)
@@ -77,22 +78,18 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         return chain.filter(exchange);
     }
 
-    private static String getTokenFromCookies(ServerHttpRequest request)
+    private static String getTokenFromCookies(ServerHttpRequest request, String tokenCookieName)
     {
-        String token = null;
-        HttpCookie cookie = request.getCookies().getFirst(SSO_COOKIE_NAME);
-        if (cookie != null)
-            token = cookie.getValue();
-        return token;
+        if (!StringUtils.hasText(tokenCookieName))
+            return null;
+
+        HttpCookie cookie = request.getCookies().getFirst(tokenCookieName);
+        return cookie != null ? cookie.getValue() : null;
     }
 
     private static String getTokenFromHeaders(ServerHttpRequest request)
     {
-        String token = null;
-        String authorizationHeader = request.getHeaders().getFirst("Authorization");
-        if (authorizationHeader != null)
-            token = authorizationHeader;
-        return token;
+        return request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
     }
 
     /**
@@ -100,10 +97,10 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
      * @param request
      * @return
      */
-    private static String getTokenFromRequest(ServerHttpRequest request)
+    public static String getTokenFromRequest(ServerHttpRequest request, String tokenCookieName)
     {
         String tokenFromHeaders = getTokenFromHeaders(request);
-        return tokenFromHeaders != null ? tokenFromHeaders : getTokenFromCookies(request);
+        return tokenFromHeaders != null ? tokenFromHeaders : getTokenFromCookies(request, tokenCookieName);
     }
 
     /**
