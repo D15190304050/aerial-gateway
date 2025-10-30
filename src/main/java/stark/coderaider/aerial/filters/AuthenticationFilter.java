@@ -60,14 +60,14 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         // Get the JWT token from the request cookies.
         String token = getTokenFromRequest(request, SSO_COOKIE_NAME);
 
-        // 如果没有Authorization header，拒绝访问
+        // Decline access if there is no Authorization header.
         if (token == null)
         {
             log.warn("Missing or invalid Authorization header for path: {}", path);
             return redirectToLoginPage(exchange);
         }
 
-        // 验证JWT令牌
+        // Validate JWT token.
         if (!jwtService.tryParseUserInfo(token, request))
         {
             log.warn("Invalid JWT token for path: {}", path);
