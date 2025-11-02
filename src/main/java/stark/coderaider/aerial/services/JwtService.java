@@ -37,13 +37,13 @@ public class JwtService
     }
 
     /**
-     * 尝试从JWT令牌中解析用户信息并设置到请求头中
+     * 解析 JWT 并把用户信息写到一个 新的 ServerHttpRequest 上。
      *
-     * @param token JWT令牌
-     * @param request 当前请求
-     * @return 如果成功解析用户信息并设置到请求头中返回true，否则返回false
+     * @param token  原始 jwt
+     * @param request 原始请求（只读）
+     * @return 如果解析成功，返回携带用户头的新请求；否则返回null
      */
-    public boolean tryParseUserInfo(String token, ServerHttpRequest request)
+    public ServerHttpRequest tryParseUserInfo(String token, ServerHttpRequest request)
     {
         try
         {
@@ -55,20 +55,18 @@ public class JwtService
 
             if (userId != null && username != null)
             {
-                request.getHeaders().put(HEADER_USER_ID, List.of(userId.toString()));
-                request.getHeaders().put(HEADER_USER_NAME, List.of(username));
-                request.getHeaders().put(HEADER_USER_NICKNAME, List.of(nickname));
-
-                return true;
+                return request.mutate()
+                    .header(HEADER_USER_ID, userId.toString())
+                    .header(HEADER_USER_NAME, username)
+                    .header(HEADER_USER_NICKNAME, nickname == null ? "" : nickname)
+                    .build();
             }
-
-            return false;
         }
         catch (Exception e)
         {
-            log.error("Failed to parse user info from JWT token.", e);
-            return false;
+            log.error("Failed to parse user info from JWT token", e);
         }
-    }
 
+        return null;
+    }
 }

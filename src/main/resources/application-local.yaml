@@ -15,19 +15,21 @@ spring:
             discovery:
                 enabled: false
         gateway:
+            # For testing purpose.
+            # After testing, the following configurations will be moved to application-staging.yaml & application.prod.yaml.
             routes:
                 -   id: titan_treasure_route
                     uri: http://localhost:46258
                     predicates:
-                        - Path=/api/profile/**
+                        - Host=treasure.titan.com
                     filters:
-                        - StripPrefix=2
+                        - StripPrefix=1
                 -   id: titan_gate_route
                     uri: http://localhost:32764
                     predicates:
-                        - Path=/api/iam/**
+                        - Host=gate.treasure.com
                     filters:
-                        - StripPrefix=2
+                        - StripPrefix=1
 
 titan:
     gate:

@@ -68,7 +68,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
         }
 
         // Validate JWT token.
-        if (!jwtService.tryParseUserInfo(token, request))
+        ServerHttpRequest requestWithUserSessionInfo = jwtService.tryParseUserInfo(token, request);
+        if (requestWithUserSessionInfo == null)
         {
             log.warn("Invalid JWT token for path: {}", path);
             return redirectToLoginPage(exchange);

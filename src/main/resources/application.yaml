@@ -22,7 +22,8 @@ spring:
 authentication:
     # 不需要认证的路径白名单
     ignorable-urls:
-        - /api/profile/**
+        - /api/avatar/**
+        - /api/profile/register
         - /api/iam/login
         - /api/iam/sso/verify-token
 #        - /health
