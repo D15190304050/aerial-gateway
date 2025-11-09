@@ -75,8 +75,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
             return redirectToLoginPage(exchange);
         }
 
-        // 令牌有效，继续处理请求
-        return chain.filter(exchange);
+        // 令牌有效，使用带有用户信息的请求继续处理
+        ServerWebExchange exchangeWithUserSessionInfo = exchange.mutate().request(requestWithUserSessionInfo).build();
+        return chain.filter(exchangeWithUserSessionInfo);
     }
 
     private static String getTokenFromCookies(ServerHttpRequest request, String tokenCookieName)
