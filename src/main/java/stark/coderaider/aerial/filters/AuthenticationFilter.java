@@ -47,11 +47,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain)
     {
         ServerHttpRequest request = exchange.getRequest();
-//        ServerHttpResponse response = exchange.getResponse();
 
         String path = request.getURI().getPath();
-        // TODO: Delete this log statement once debugging is done.
-        log.info("Request path: {}", path);
 
         // If it's a whitelisted path, allow it.
         if (isWhitelisted(path))
